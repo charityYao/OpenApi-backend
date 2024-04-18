@@ -10,8 +10,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * MyBatis Plus 配置
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
+
  */
 @Configuration
 @MapperScan("com.yao.project.mapper")

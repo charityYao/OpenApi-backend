@@ -8,8 +8,10 @@ import com.yao.project.service.UserService;
 import com.yao.yuapicommon.model.entity.User;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -17,6 +19,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -24,8 +27,6 @@ import java.util.stream.Collectors;
 /**
  * 权限校验 AOP
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
  */
 @Aspect
 @Component
@@ -34,7 +35,7 @@ public class AuthInterceptor {
     @Resource
     private UserService userService;
 
-    // https://t.zsxq.com/0emozsIJh
+
 
     /**
      * 执行拦截
@@ -45,8 +46,16 @@ public class AuthInterceptor {
      */
     @Around("@annotation(authCheck)")
     public Object doInterceptor(ProceedingJoinPoint joinPoint, AuthCheck authCheck) throws Throwable {
+//        Signature signature = joinPoint.getSignature();
+//        //获取aop修饰的方法信息
+//        MethodSignature methodSignature = (MethodSignature) signature;
+//        Method method = methodSignature.getMethod();
+//        //获取方法上的注解信息
+//        AuthCheck annotation = method.getAnnotation(AuthCheck.class);
+
         List<String> anyRole = Arrays.stream(authCheck.anyRole()).filter(StringUtils::isNotBlank).collect(Collectors.toList());
         String mustRole = authCheck.mustRole();
+        //获得请求
         RequestAttributes requestAttributes = RequestContextHolder.currentRequestAttributes();
         HttpServletRequest request = ((ServletRequestAttributes) requestAttributes).getRequest();
         // 当前登录用户

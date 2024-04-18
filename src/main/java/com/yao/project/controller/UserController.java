@@ -24,8 +24,7 @@ import java.util.stream.Collectors;
 /**
  * 用户接口
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
+
  */
 @RestController
 @RequestMapping("/user")
@@ -93,8 +92,6 @@ public class UserController {
         return ResultUtils.success(result);
     }
 
-    // [加入编程导航](https://yao.icu) 深耕编程提升【两年半】、国内净值【最高】的编程社群、用心服务【20000+】求学者、帮你自学编程【不走弯路】
-
     /**
      * 获取当前登录用户
      *
@@ -102,9 +99,9 @@ public class UserController {
      * @return
      */
     @GetMapping("/get/login")
-    public BaseResponse<UserVO> getLoginUser(HttpServletRequest request) {
+    public BaseResponse<User> getLoginUser(HttpServletRequest request) {
         User user = userService.getLoginUser(request);
-        UserVO userVO = new UserVO();
+        User userVO = new User();
         BeanUtils.copyProperties(user, userVO);
         return ResultUtils.success(userVO);
     }

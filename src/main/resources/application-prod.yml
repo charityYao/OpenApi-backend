@@ -1,9 +1,13 @@
 # 线上配置文件
-# @author <a href="https://github.com/liyao">程序员鱼皮</a>
-# @from <a href="https://yao.icu">编程导航知识星球</a>
+
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/yuapi
+    url: jdbc:mysql://1.14.155.37:3306/api_center
     username: root
-    password: 123456
+    password: 56xj7tNt5wZYFDes
+  cloud:
+    sentinel:
+      transport:
+        dashboard: 1.14.155.37:9090
+

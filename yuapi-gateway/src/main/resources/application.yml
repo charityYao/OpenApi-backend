@@ -1,18 +1,19 @@
 # 公共配置文件
-# @author <a href="https://github.com/liyao">程序员鱼皮</a>
-# @from <a href="https://yao.icu">编程导航知识星球</a>
+
 server:
   port: 8090
 spring:
   cloud:
     gateway:
       default-filters:
+        #流量染色
         - AddResponseHeader=source, yao
       routes:
         - id: api_route
           uri: http://localhost:8123
           predicates:
             - Path=/api/**
+
 #        - id: add_request_header_route
 #          uri: http://localhost:8123
 #          predicates:
@@ -35,11 +36,10 @@ logging:
         cloud:
           gateway: trace
 
-# 原创_项目 [鱼皮](https://space.bilibili.com/12890453/)
 
 dubbo:
   application:
-    name: dubbo-springboot-demo-provider
+    name: dubbo-springboot-demo-consumer
   protocol:
     name: dubbo
     port: -1

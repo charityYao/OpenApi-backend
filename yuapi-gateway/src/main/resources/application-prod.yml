@@ -1,0 +1,12 @@
+# 公共配置文件
+
+dubbo:
+  application:
+    name: dubbo-springboot-demo-consumer
+  protocol:
+    name: dubbo
+    port: -1
+  registry:
+    id: nacos-registry
+    address: nacos://1.14.155.37:8848
+

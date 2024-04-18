@@ -39,7 +39,7 @@
         </dependency>
         <dependency>
             <groupId>com.yao</groupId>
-            <artifactId>yuapi-client-sdk</artifactId>
+            <artifactId>api-client-sdk</artifactId>
             <version>0.0.1</version>
         </dependency>
         <dependency>

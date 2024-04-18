@@ -1,8 +1,13 @@
 package com.yao.project.controller;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.json.JSONUtil;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.gson.Gson;
+import com.yao.apiclientsdk.client.ApiClient;
 import com.yao.project.annotation.AuthCheck;
 import com.yao.project.common.*;
 import com.yao.project.constant.CommonConstant;
@@ -13,24 +18,31 @@ import com.yao.project.model.dto.interfaceinfo.InterfaceInfoQueryRequest;
 import com.yao.project.model.dto.interfaceinfo.InterfaceInfoUpdateRequest;
 import com.yao.project.model.enums.InterfaceInfoStatusEnum;
 import com.yao.project.service.InterfaceInfoService;
+import com.yao.project.service.UserInterfaceInfoService;
 import com.yao.project.service.UserService;
-import com.yao.yuapiclientsdk.client.YuApiClient;
 import com.yao.yuapicommon.model.entity.InterfaceInfo;
 import com.yao.yuapicommon.model.entity.User;
+import com.yao.yuapicommon.model.entity.UserInterfaceInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.List;
 
 /**
  * 接口管理
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
+
  */
 @RestController
 @RequestMapping("/interfaceInfo")
@@ -39,12 +51,14 @@ public class InterfaceInfoController {
 
     @Resource
     private InterfaceInfoService interfaceInfoService;
+    @Resource
+    private UserInterfaceInfoService userInterfaceInfoService;
 
     @Resource
     private UserService userService;
 
     @Resource
-    private YuApiClient yuApiClient;
+    private ApiClient apiClient;
 
     // region 增删改查
 
@@ -178,7 +192,9 @@ public class InterfaceInfoController {
         if (interfaceInfoQueryRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+        //接口对象
         InterfaceInfo interfaceInfoQuery = new InterfaceInfo();
+
         BeanUtils.copyProperties(interfaceInfoQueryRequest, interfaceInfoQuery);
         long current = interfaceInfoQueryRequest.getCurrent();
         long size = interfaceInfoQueryRequest.getPageSize();
@@ -191,7 +207,11 @@ public class InterfaceInfoController {
         if (size > 50) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        QueryWrapper<InterfaceInfo> queryWrapper = new QueryWrapper<>(interfaceInfoQuery);
+        QueryWrapper<InterfaceInfo> queryWrapper = new QueryWrapper<>();
+        User loginUser = userService.getLoginUser(request);
+        if(loginUser.getUserRole() != "admin") {
+            queryWrapper.eq("status", 1);
+        }
         queryWrapper.like(StringUtils.isNotBlank(description), "description", description);
         queryWrapper.orderBy(StringUtils.isNotBlank(sortField),
                 sortOrder.equals(CommonConstant.SORT_ORDER_ASC), sortField);
@@ -222,9 +242,9 @@ public class InterfaceInfoController {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
         // 判断该接口是否可以调用
-        com.yao.yuapiclientsdk.model.User user = new com.yao.yuapiclientsdk.model.User();
+        com.yao.apiclientsdk.model.User user = new com.yao.apiclientsdk.model.User();
         user.setUsername("test");
-        String username = yuApiClient.getUsernameByPost(user);
+        String username = apiClient.getUsernameByPost(user);
         if (StringUtils.isBlank(username)) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "接口验证失败");
         }
@@ -273,28 +293,94 @@ public class InterfaceInfoController {
      */
     @PostMapping("/invoke")
     public BaseResponse<Object> invokeInterfaceInfo(@RequestBody InterfaceInfoInvokeRequest interfaceInfoInvokeRequest,
-                                                     HttpServletRequest request) {
-        if (interfaceInfoInvokeRequest == null || interfaceInfoInvokeRequest.getId() <= 0) {
+                                                     HttpServletRequest request){
+        //1.判断接口是否存在
+        if (interfaceInfoInvokeRequest == null || interfaceInfoInvokeRequest.getId() == null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+        // get interfaceid
         long id = interfaceInfoInvokeRequest.getId();
-        String userRequestParams = interfaceInfoInvokeRequest.getUserRequestParams();
-        // 判断是否存在
-        InterfaceInfo oldInterfaceInfo = interfaceInfoService.getById(id);
-        if (oldInterfaceInfo == null) {
+        //获取数据库内接口信息
+        InterfaceInfo interfaceInfo = interfaceInfoService.getById(id);
+        if (interfaceInfo == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
-        if (oldInterfaceInfo.getStatus() == InterfaceInfoStatusEnum.OFFLINE.getValue()) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "接口已关闭");
-        }
+        //获取登录用户ak，sk
         User loginUser = userService.getLoginUser(request);
         String accessKey = loginUser.getAccessKey();
         String secretKey = loginUser.getSecretKey();
-        YuApiClient tempClient = new YuApiClient(accessKey, secretKey);
-        Gson gson = new Gson();
-        com.yao.yuapiclientsdk.model.User user = gson.fromJson(userRequestParams, com.yao.yuapiclientsdk.model.User.class);
-        String usernameByPost = tempClient.getUsernameByPost(user);
-        return ResultUtils.success(usernameByPost);
+
+        //2.用户调用次数校验
+        QueryWrapper<UserInterfaceInfo> userInterfaceInfoQueryWrapper = new QueryWrapper<>();
+        userInterfaceInfoQueryWrapper.eq("userId", loginUser.getId());
+        userInterfaceInfoQueryWrapper.eq("interfaceInfoId", id);
+        UserInterfaceInfo userInterfaceInfo = userInterfaceInfoService.getOne(userInterfaceInfoQueryWrapper);
+        //第一次调用赠送100次机会
+        if (userInterfaceInfo == null){
+            UserInterfaceInfo userInterfaceInfo1 = new UserInterfaceInfo();
+            userInterfaceInfo1.setInterfaceInfoId(id);
+            userInterfaceInfo1.setUserId(loginUser.getId());
+            userInterfaceInfo1.setStatus(1);
+            userInterfaceInfo1.setLeftNum(100);
+            userInterfaceInfoService.save(userInterfaceInfo1);
+        }
+        int leftNum = userInterfaceInfo.getLeftNum();
+        if(leftNum <= 0){
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "调用次数不足！");
+        }
+
+        //3.发起接口调用
+
+        String requestParams= interfaceInfoInvokeRequest.getUserRequestParams();
+        Object res = invokeInterfaceInfo(apiClient, interfaceInfo.getName(), requestParams, accessKey, secretKey);
+        if (res == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
+        }
+        if (res.toString().contains("Error request")) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "调用错误，请检查参数和接口调用次数！");
+        }
+        return ResultUtils.success(res);
+    }
+    private Object invokeInterfaceInfo(ApiClient apiClient1, String methodName, String userRequestParams,
+                                       String accessKey, String secretKey) {
+        try {
+            Class<?> clientClazz = apiClient1.getClass();
+            // 1. 获取构造器，参数为ak,sk
+            Constructor<?> ApiClientConstructor = clientClazz.getConstructor(String.class, String.class);
+            // 2. 构造出客户端
+            ApiClient apiClient = (ApiClient) ApiClientConstructor.newInstance(accessKey, secretKey);
+
+            // 3. 找到要调用的方法
+            Method[] methods = clientClazz.getMethods();
+            for (Method method : methods) {
+                if (method.getName().equals(methodName)) {
+                    // 3.1 获取参数类型列表
+                    Class<?>[] parameterTypes = method.getParameterTypes();
+                    if (parameterTypes.length == 0) {
+                        // 如果没有参数，直接调用
+                        return method.invoke(apiClient);
+                    }
+//                    Object parameter = JSONUtil.toBean(userRequestParams, parameterTypes[0]);
+                    Gson gson = new Gson();
+                    StringBuffer stringBuffer = new StringBuffer();
+
+                    // 构造参数
+                    Object parameter = gson.fromJson(userRequestParams, parameterTypes[0]);
+                   //判断参数列表是否匹配
+                    if(BeanUtil.isNotEmpty(parameter)){
+                        return method.invoke(apiClient, parameter);
+                    }else{
+                        return ResultUtils.error(ErrorCode.PARAMS_ERROR,"Error request:请检查你的请求参数是否正确!");
+                    }
+
+
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "找不到调用的方法!! 请检查你的请求参数是否正确!");
+        }
     }
 
 }

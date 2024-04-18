@@ -17,6 +17,8 @@ import org.springframework.util.DigestUtils;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 
+import java.util.Map;
+
 import static com.yao.project.constant.UserConstant.ADMIN_ROLE;
 import static com.yao.project.constant.UserConstant.USER_LOGIN_STATE;
 
@@ -24,8 +26,7 @@ import static com.yao.project.constant.UserConstant.USER_LOGIN_STATE;
 /**
  * 用户服务实现类
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
+
  */
 @Service
 @Slf4j
@@ -49,7 +50,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (userAccount.length() < 4) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户账号过短");
         }
-        if (userPassword.length() < 8 || checkPassword.length() < 8) {
+        if (userPassword.length() < 4 || checkPassword.length() < 4) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户密码过短");
         }
         // 密码和校验密码相同
@@ -79,6 +80,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             if (!saveResult) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "注册失败，数据库错误");
             }
+
             return user.getId();
         }
     }
@@ -92,7 +94,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (userAccount.length() < 4) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "账号错误");
         }
-        if (userPassword.length() < 8) {
+        if (userPassword.length() < 4) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码错误");
         }
         // 2. 加密
@@ -102,6 +104,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         queryWrapper.eq("userAccount", userAccount);
         queryWrapper.eq("userPassword", encryptPassword);
         User user = userMapper.selectOne(queryWrapper);
+        //用户信息去敏保存，保存不敏感的信息如id
         // 用户不存在
         if (user == null) {
             log.info("user login failed, userAccount cannot match userPassword");

@@ -1,8 +1,9 @@
 package com.yao.yuapigateway;
 
-import com.yao.yuapiclientsdk.utils.SignUtils;
+import com.yao.apiclientsdk.utils.SignUtils;
 import com.yao.yuapicommon.model.entity.InterfaceInfo;
 import com.yao.yuapicommon.model.entity.User;
+import com.yao.yuapicommon.model.entity.UserInterfaceInfo;
 import com.yao.yuapicommon.service.InnerInterfaceInfoService;
 import com.yao.yuapicommon.service.InnerUserInterfaceInfoService;
 import com.yao.yuapicommon.service.InnerUserService;
@@ -28,13 +29,13 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 /**
  * 全局过滤
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
+
  */
 @Slf4j
 @Component
@@ -58,6 +59,7 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
         log.info("经过过滤器");
         // 1. 请求日志
         ServerHttpRequest request = exchange.getRequest();
+
         String path = INTERFACE_HOST + request.getPath().value();
         String method = request.getMethod().toString();
         log.info("请求唯一标识：" + request.getId());
@@ -67,12 +69,16 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
         String sourceAddress = request.getLocalAddress().getHostString();
         log.info("请求来源地址：" + sourceAddress);
         log.info("请求来源地址：" + request.getRemoteAddress());
+        log.info("请求体："+request.getBody());
         ServerHttpResponse response = exchange.getResponse();
-        // 2. 访问控制 - 黑白名单
-        if (!IP_WHITE_LIST.contains(sourceAddress)) {
-            response.setStatusCode(HttpStatus.FORBIDDEN);
-            return response.setComplete();
-        }
+//        // 2. 访问控制 - 黑白名单 待完善
+//        if (!IP_WHITE_LIST.contains(sourceAddress)) {
+//            response.setStatusCode(HttpStatus.FORBIDDEN);
+//            log.info("未在白名单中");
+//
+//            return response.setComplete();
+//
+//        }
         // 3. 用户鉴权（判断 ak、sk 是否合法）
         HttpHeaders headers = request.getHeaders();
         String accessKey = headers.getFirst("accessKey");
@@ -80,7 +86,8 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
         String timestamp = headers.getFirst("timestamp");
         String sign = headers.getFirst("sign");
         String body = headers.getFirst("body");
-        // todo 实际情况应该是去数据库中查是否已分配给用户
+        log.info(headers.getFirst("Content-Type"));
+        // 去数据库中查是否已分配给用户
         User invokeUser = null;
         try {
             invokeUser = innerUserService.getInvokeUser(accessKey);
@@ -90,9 +97,7 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
         if (invokeUser == null) {
             return handleNoAuth(response);
         }
-//        if (!"yao".equals(accessKey)) {
-//            return handleNoAuth(response);
-//        }
+
         if (Long.parseLong(nonce) > 10000L) {
             return handleNoAuth(response);
         }
@@ -102,9 +107,11 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
         if ((currentTime - Long.parseLong(timestamp)) >= FIVE_MINUTES) {
             return handleNoAuth(response);
         }
-        // 实际情况中是从数据库中查出 secretKey
+        //从数据库中查出 secretKey
         String secretKey = invokeUser.getSecretKey();
-        String serverSign = SignUtils.genSign(body, secretKey);
+        //加密
+        String serverSign = SignUtils.genSign(nonce,timestamp, secretKey);
+        //比对加密后的sk
         if (sign == null || !sign.equals(serverSign)) {
             return handleNoAuth(response);
         }
@@ -118,14 +125,26 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
         if (interfaceInfo == null) {
             return handleNoAuth(response);
         }
+        //  接口是否可用
+        Integer status = interfaceInfo.getStatus();
+        if(status == 0)
+        {
+            log.info("接口已经下线");
+            return handleInvokeError(response);
+        }
+        //  是否还有调用次数
+        UserInterfaceInfo userInterfaceInfo = innerUserInterfaceInfoService.getUserInterfaceInfo(interfaceInfo.getId(),
+                                                                            invokeUser.getId());
+        if(userInterfaceInfo != null){
+            long res = userInterfaceInfo.getLeftNum();
+            if(res < 0){
+                log.info("调用次数不足");
+                return handleInvokeError(response);
+            }
+        }else{
+            return handleNoAuth(response);
+        }
 
-//        //  是否还有调用次数
-//        UserInterfaceInfo userInterfaceInfo = innerUserInterfaceInfoService.getUserInterfaceInfo(interfaceInfo.getId(),
-//                                                                            invokeUser.getId());
-//        long res = userInterfaceInfo.getLeftNum();
-//        if(res < 0){
-//            return handleInvokeError(response);
-//        }
         // 5. 请求转发，调用模拟接口 + 响应日志
         //        Mono<Void> filter = chain.filter(exchange);
         //        return filter;
@@ -149,6 +168,7 @@ public class CustomGlobalFilter implements GlobalFilter, Ordered {
             HttpStatus statusCode = originalResponse.getStatusCode();
             if (statusCode == HttpStatus.OK) {
                 // 装饰，增强能力
+                //异步执行
                 ServerHttpResponseDecorator decoratedResponse = new ServerHttpResponseDecorator(originalResponse) {
                     // 等调用完转发的接口后才会执行
                     @Override

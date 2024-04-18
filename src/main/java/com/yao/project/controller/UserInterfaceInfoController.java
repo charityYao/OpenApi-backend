@@ -26,8 +26,7 @@ import java.util.List;
 /**
  * 接口管理
  *
- * @author <a href="https://github.com/liyao">程序员鱼皮</a>
- * @from <a href="https://yao.icu">编程导航知识星球</a>
+
  */
 @RestController
 @RequestMapping("/userInterfaceInfo")
@@ -68,8 +67,6 @@ public class UserInterfaceInfoController {
         long newUserInterfaceInfoId = userInterfaceInfo.getId();
         return ResultUtils.success(newUserInterfaceInfoId);
     }
-
-    // [加入编程导航](https://t.zsxq.com/0emozsIJh) 深耕编程提升【两年半】、国内净值【最高】的编程社群、用心服务【20000+】求学者、帮你自学编程【不走弯路】
 
     /**
      * 删除
